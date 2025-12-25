@@ -3,6 +3,11 @@ import torch
 from trl import SFTTrainer
 from transformers import TrainingArguments
 from unsloth import is_bfloat16_supported
+import sys
+import os
+
+# Add parent directory to path to import project modules
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # 1. Configuration
 max_seq_length = 2048 # Choose any! We auto support RoPE Scaling internally!
@@ -38,9 +43,96 @@ model = FastLanguageModel.get_peft_model(
 )
 
 # 4. Prepare Dataset
-# Load our custom formatted dataset
-from datasets import load_dataset
-dataset = load_dataset("json", data_files="finetuning/train.jsonl", split="train")
+# Option 1: Load from existing JSONL (if available)
+# Option 2: Generate from CSV dynamically
+
+from datasets import Dataset
+import pandas as pd
+import json
+
+print("\n" + "="*60)
+print("Loading KPI Dataset")
+print("="*60)
+
+# Check if we should use pre-generated JSONL or load from CSV
+jsonl_path = "finetuning/train.jsonl"
+csv_path = "kpi_15_mins.csv"
+
+if not os.path.exists(csv_path) and os.path.exists("../kpi_15_mins.csv"):
+    csv_path = "../kpi_15_mins.csv"
+
+use_csv_loader = True  # Set to False to use pre-generated JSONL
+
+if use_csv_loader and os.path.exists(csv_path):
+    print(f"Loading data from CSV: {csv_path}")
+    
+    # Load and prepare data (same logic as dataset_prep.py)
+    df = pd.read_csv(csv_path)
+    print(f"  Total rows: {len(df)}")
+    
+    # Filter for EnodebA
+    df = df[df['enodeb'] == 'EnodebA']
+    print(f"  After filtering EnodebA: {len(df)}")
+    
+    df['date_key'] = df['date_hour'].astype(str) + " " + df['update_time'].astype(str)
+    grouped = df.groupby('cell_name')
+    
+    window_in = 48
+    window_out = 24
+    kpis = ['ps_traffic_mb', 'avg_rrc_connected_user', 'prb_dl_used', 'prb_dl_available_total']
+    
+    data_samples = []
+    print(f"  Generating sliding windows ({window_in} → {window_out})...")
+    
+    for name, group in grouped:
+        group = group.sort_values(by=['date_hour', 'update_time'])
+        
+        for kpi in kpis:
+            if kpi not in group.columns:
+                continue
+            
+            values = group[kpi].tolist()
+            if len(values) < window_in + window_out:
+                continue
+            
+            for i in range(len(values) - window_in - window_out + 1):
+                input_seq = values[i : i + window_in]
+                target_seq = values[i + window_in : i + window_in + window_out]
+                
+                input_str = ", ".join(map(str, input_seq))
+                target_str = ", ".join(map(str, target_seq))
+                instruction = f"Predict the next {window_out} values of {kpi} given the previous {window_in} values."
+                
+                data_samples.append({
+                    "instruction": instruction,
+                    "input": input_str,
+                    "output": target_str
+                })
+    
+    print(f"  Generated {len(data_samples)} training samples")
+    
+    # Convert to HuggingFace Dataset
+    dataset = Dataset.from_dict({
+        "instruction": [s["instruction"] for s in data_samples],
+        "input": [s["input"] for s in data_samples],
+        "output": [s["output"] for s in data_samples]
+    })
+    
+    # Optionally save for future use
+    if not os.path.exists("finetuning"):
+        os.makedirs("finetuning")
+    print(f"  Saving to {jsonl_path} for future use...")
+    with open(jsonl_path, 'w') as f:
+        for sample in data_samples:
+            f.write(json.dumps(sample) + "\n")
+    
+else:
+    print(f"Loading data from JSONL: {jsonl_path}")
+    from datasets import load_dataset
+    dataset = load_dataset("json", data_files=jsonl_path, split="train")
+    print(f"  Loaded {len(dataset)} samples")
+
+print("="*60 + "\n")
 
 # Define prompt template (matches generation script)
 # We can use a simpler prompt since we pre-formatted it in dataset_prep.py 
