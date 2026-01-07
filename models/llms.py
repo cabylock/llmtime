@@ -10,6 +10,9 @@ from models.mistral import tokenize_fn as mistral_tokenize_fn
 from models.mistral_api import mistral_api_completion_fn, mistral_api_nll_fn
 from models.mistral_api import tokenize_fn as mistral_api_tokenize_fn
 
+from models.qwen import qwen_completion_fn
+from models.qwen import tokenize_fn as qwen_tokenize_fn
+
 
 # Required: Text completion function for each model
 # -----------------------------------------------
@@ -40,6 +43,7 @@ completion_fns = {
     'llama-7b-chat': partial(llama_completion_fn, model='7b-chat'),
     'llama-13b-chat': partial(llama_completion_fn, model='13b-chat'),
     'llama-70b-chat': partial(llama_completion_fn, model='70b-chat'),
+    'qwen-2.5-0.5b-instruct': partial(qwen_completion_fn, model='Qwen/Qwen2.5-0.5B-Instruct'),
 }
 
 # Optional: NLL/D functions for each model
@@ -94,6 +98,7 @@ tokenization_fns = {
     'llama-7b-chat': partial(llama_tokenize_fn, model='7b-chat'),
     'llama-13b-chat': partial(llama_tokenize_fn, model='13b-chat'),
     'llama-70b-chat': partial(llama_tokenize_fn, model='70b-chat'),
+    'qwen-2.5-0.5b-instruct': partial(qwen_tokenize_fn, model='Qwen/Qwen2.5-0.5B-Instruct'),
 }
 
 # Optional: Context lengths for each model, only needed if you want automatic input truncation.
@@ -110,4 +115,5 @@ context_lengths = {
     'llama-7b-chat': 4096,
     'llama-13b-chat': 4096,
     'llama-70b-chat': 4096,
+    'qwen-2.5-0.5b-instruct': 32768,
 }
